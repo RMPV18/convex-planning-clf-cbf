@@ -439,7 +439,14 @@ classdef GcsMotionPlanner < ShortestPathProblem
                         error('GcsMotionPlanner:unbounded', ...
                             'Regions %d,%d: unbounded polytope; Q_i must be bounded.', i, j);
                     end
-                    if fl == 1 && -fv >= o.minOverlap - 1e-12
+                    if fl ~= 1, continue; end
+                    r = -fv;  tol = 1e-7;
+                    % Touching regions (r ~ 0, e.g. from free_space_decomposition)
+                    % are connected only through a shared facet: a vertex-only
+                    % contact is a zero-clearance pinch between obstacle corners.
+                    if r >= max(o.minOverlap, tol) || ...
+                       (o.minOverlap <= tol && r >= -tol && ...
+                        GcsMotionPlanner.facet_contact(A ./ nr, b ./ nr, n, tol))
                         g.add_edge(num2str(i), num2str(j));
                         g.add_edge(num2str(j), num2str(i));
                     end
@@ -452,6 +459,24 @@ classdef GcsMotionPlanner < ShortestPathProblem
             end
             if ~hasS, error('GcsMotionPlanner:q0', 'q0 is not contained in any region.'); end
             if ~hasT, error('GcsMotionPlanner:qT', 'qT is not contained in any region.'); end
+        end
+
+        function tf = facet_contact(A, b, n, tol)
+            % True iff the touching polytopes {A x <= b} (unit-norm rows,
+            % stacked [Q_i; Q_j]) share an (n-1)-dimensional facet patch:
+            % some opposing row pair spans a hyperplane in which the
+            % intersection contains an (n-1)-ball of radius > tol.
+            lpo = optimoptions('linprog', 'Display', 'off');
+            [fi, fj] = find(abs(A * A' + 1) < 1e-6 & abs(b + b') < 1e-6 * max(1, norm(b, inf)));
+            tf = false;
+            for f = find(fi < fj)'
+                nrm = A(fi(f), :)';
+                pn = vecnorm(A * (eye(n) - nrm * nrm'), 2, 2);   % in-plane row norms
+                keep = pn > 1e-9;
+                [~, fv, fl] = linprog([zeros(n,1); -1], [A(keep,:), pn(keep)], b(keep), ...
+                    [nrm; 0]', b(fi(f)), [], [], lpo);
+                if fl == 1 && -fv > tol, tf = true; return; end
+            end
         end
 
         function cs = lifted_set(region, n, d, o)

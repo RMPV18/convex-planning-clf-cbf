@@ -5,12 +5,16 @@
 %    pair of adjacent regions, so the SPP in GCS returns the crossing
 %    points between consecutive regions of a minimum-length path.
 % 3. Remove waypoints that do not touch an obstacle (path_filter).
+% Obstacles are inflated by `margin` (inflate_obstacles) before the
+% decomposition, so the path and the CBF safe sets keep that clearance
+% from the true obstacles.
 % Requires: YALMIP + a conic solver, Optimization Toolbox (linprog).
 
 clear; clc;
 
 q0 = [0.1; 0.2];
 qT = [9.9; 9.9];
+margin = 0.25;     % clearance from the true obstacles (planning and CBF safe sets)
 
 bbox = [0 0; 10 0; 10 10; 0 10];
 obstacles = { [2 2; 4 2; 4 3; 2 3], ...                    % L-shape (part 1)
@@ -22,7 +26,7 @@ obstacles = { [2 2; 4 2; 4 3; 2 3], ...                    % L-shape (part 1)
               [8 2; 8 3; 7 3; 7 2] };                      % L-shape (part 2)
 
 %% Free-space decomposition and graph
-regions = free_space_decomposition(bbox, obstacles);
+regions = free_space_decomposition(bbox, inflate_obstacles(obstacles, margin));
 regions = sort_regions(regions, q0);
 [neighbors, A_adj] = adjacent_regions(regions);
 
@@ -37,13 +41,20 @@ tic
 toc
 
 %% Waypoint filtering
-% Convex pieces of the obstacles = decomposition of the complement of the
-% free regions. NOTE: the loop runs over numel(obstacles), not
-% numel(obstacles_dec); the two counts can differ (open issue).
+% Convex pieces of the (inflated) obstacles = decomposition of the
+% complement of the free regions.
 obstacles_dec = free_space_decomposition(bbox, regions);
-obstacles_cs = cell(1, numel(obstacles));
-for k = 1:numel(obstacles), obstacles_cs{k} = ConvexSet.polygon(obstacles_dec{k}); end
+obstacles_cs = cellfun(@(v) ConvexSet.polygon(v), obstacles_dec, 'UniformOutput', false);
 [fil_path, fil_positions, rm_i] = path_filter(obstacles_cs, path, positions);
+
+%% Clearance of the polygonal path from the true obstacles
+clearance = min(path_clearance(positions, obstacles), path_clearance(fil_positions, obstacles));
+fprintf('Min clearance of path and filtered path from the true obstacles: %.4f (margin %.2f)\n', ...
+    clearance, margin);
+if clearance < margin - 1e-6
+    warning('demo_gcs_clf_cbf_planning:clearance', ...
+        'Path clearance %.4f is below the margin %.2f.', clearance, margin);
+end
 
 fprintf('Path: %s\n', strjoin(path, ' -> '));
 fprintf('Filtered Path: %s\n', strjoin(fil_path, ' -> '));
@@ -80,3 +91,4 @@ plot(positions(1,rm_i), positions(2,rm_i), 'x', 'LineWidth', 2, ...
 xlabel('x'); ylabel('y');
 title(sprintf('Free space decomposed into %d convex regions \n\n Shortest path in GCS\n (path: %s,\n cost = %.3f)', ...
     numel(regions), strjoin(path, ' -> '), cost));
+

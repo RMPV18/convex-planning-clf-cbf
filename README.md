@@ -8,8 +8,8 @@ planner + tracker **pipelines** can be compared side by side.
 
 | Folder | Content |
 |---|---|
-| `common/` | Shared by all pipelines: `ConvexSet`, `GraphOfConvexSets`, `ShortestPathProblem` (SPP in GCS), `free_space_decomposition`, `adjacent_regions`, `sort_regions`. Demos in `common/demos/`. |
-| `gcs_clf_cbf/` | Free-space decomposition → SPP in GCS on the intersection graph (`build_intersection_graph`, `path_filter`) → closed-form CLF-CBF waypoint following (`double_integrator_waypoint_clf_cbf`, `unicycle_waypoint_clf_cbf`). `wip/` holds work in progress. |
+| `common/` | Shared by all pipelines: `ConvexSet`, `GraphOfConvexSets`, `ShortestPathProblem` (SPP in GCS), `free_space_decomposition`, `adjacent_regions`, `sort_regions`. `inflate_obstacles`, `convex_obstacle_pieces`, `firi_polytope`, `path_clearance`. Demos in `common/*/demo*/`. |
+| `gcs_clf_cbf/` | Free-space decomposition → SPP in GCS on the intersection graph (`build_intersection_graph`, `path_filter`) → closed-form CLF-CBF waypoint following (`double_integrator_waypoint_clf_cbf`, `unicycle_waypoint_clf_cbf`); safe-set chain tracker (`build_safe_chain`, `translate_waypoint`, `chain_targets`, `double_integrator_safe_chain_clf_cbf`) with secondary versions in `online_firi/` and `gcs_bezier/`, compared by `demos/compare_safe_set_versions`. `wip/` holds work in progress, `tocheck/` review copies (both git-ignored or off the MATLAB path). |
 | `gcs_pid/` | `GcsMotionPlanner` (Bézier trajectories in GCS, Marcucci et al. 2023) → joint PID (`track_gcs_pid`). |
 | `dcp_pid/` | `dcp_polygon_planner` (penalty convex-concave procedure, CVX) → saturated discrete PID (`pid_trajectory_tracker`). |
 | `library/` | Reusable code not called by the current pipelines: `line_of_sight/`, `clf_cbf_qp_closed_form` (relaxed-CLF variant), `lse_cbf`, `vert2hrep`. |
@@ -40,6 +40,21 @@ closed-form QP against `quadprog` and that the local QP copies are identical.
 Limitations: the QP controller is Lipschitz, not C^1; union regions (max 2
 polytopes) are non-convex, so deadlock-freedom is not guaranteed
 (`wp:timeout`); the CBF is an inner approximation (gap ≈ `ln(m)/kappa`).
+
+**Safe-set chain** (`gcs_clf_cbf/`, `demo_gcs_clf_cbf_following`): offline,
+once, after planning (the planner does not use these sets): for every facet
+between consecutive path regions a FIRI polytope (Wang et al., T-RO 2025;
+`common/regions/firi_polytope`) seeded on the facet and confined to the
+bounding box of the two regions (Gonzalez-Garcia et al. heuristic) bridges
+them, giving the chain region, bridge, region, ... Each crossing point is
+translated along `n_qhat` into the intersection of the adjacent sets with
+margin `mu` (Matias & Silvestre Eqs. 32, 42-44 adapted). Tracking: LSE CBF of
+the active set, `alpha_bar >= gamma_bar` (no CLF/CBF conflict inside a convex
+set), joint backstepping, after-next target when in sight, jump when the
+state enters the next set (`h_{i+1} >= sigma`). Secondary versions:
+`online_firi/` (FIRI set computed online from the current state and the
+target) and `gcs_bezier/` (waypoints where a `GcsMotionPlanner` trajectory
+crosses the `q_hat` hyperplanes).
 
 **GCS + PID** (`gcs_pid/`): `GcsMotionPlanner` (Marcucci, Petersen, von
 Wrangel, Tedrake, *Motion Planning around Obstacles with Convex

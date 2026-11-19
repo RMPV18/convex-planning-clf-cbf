@@ -38,10 +38,10 @@ for i = 1:numel(regions_cs)
 end
 
 for k = 1:numel(regions_cs)
-    if regions_cs{k}.contains(q0, 0)
+    if regions_cs{k}.contains(q0, 1e-9)
         for j = neighbors{k}, g.add_edge('s', pair_name(k, j)); end
     end
-    if regions_cs{k}.contains(qT, 0)
+    if regions_cs{k}.contains(qT, 1e-9)
         for j = neighbors{k}, g.add_edge(pair_name(k, j), 't'); end
     end
 end

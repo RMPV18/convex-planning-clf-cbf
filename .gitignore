@@ -1,3 +1,4 @@
 config_local.m
 *.lic
 *.asv
+tocheck/
